@@ -1,48 +1,115 @@
 import React, { useState, useEffect } from "react";
 import styled from "styled-components";
+import axios from "axios"; // Import axios để gọi API
 import Logo from "../assets/logo.svg";
 
-export default function Contacts({ contacts, changeChat }) {
+export default function Contacts({ changeChat }) {
+  const [contacts, setContacts] = useState([]); // Danh sách người dùng
+  const [groupcontacts, setGroupContacts] = useState([]); // Danh sách nhóm
   const [currentUserName, setCurrentUserName] = useState(undefined);
   const [currentUserImage, setCurrentUserImage] = useState(undefined);
   const [currentSelected, setCurrentSelected] = useState(undefined);
-  useEffect(async () => {
-    const data = await JSON.parse(
-      localStorage.getItem(process.env.REACT_APP_LOCALHOST_KEY)
-    );
-    setCurrentUserName(data.username);
-    setCurrentUserImage(data.avatarImage);
+
+  useEffect(() => {
+    const fetchContacts = async () => {
+      try {
+        const response = await axios.get(
+          "http://localhost:5000/api/auth/getallusers"
+        );
+        setContacts(response.data);
+      } catch (error) {
+        console.error("Error fetching users:", error);
+      }
+    };
+
+    const fetchGroups = async () => {
+      try {
+        const response = await axios.get(
+          "http://localhost:5000/api/group/getAllGroups"
+        );
+        setGroupContacts(response.data);
+      } catch (error) {
+        console.error("Error fetching groups:", error);
+      }
+    };
+
+    const fetchCurrentUser = async () => {
+      const data = await JSON.parse(
+        localStorage.getItem(process.env.REACT_APP_LOCALHOST_KEY)
+      );
+      setCurrentUserName(data.username);
+      setCurrentUserImage(data.avatarImage);
+    };
+
+    fetchContacts();
+    fetchGroups();
+    fetchCurrentUser();
   }, []);
+
   const changeCurrentChat = (index, contact) => {
     setCurrentSelected(index);
+    // console.log(contact);
     changeChat(contact);
   };
+
   return (
     <>
-      {currentUserImage && currentUserImage && (
+      {currentUserImage && currentUserName && (
         <Container>
           <div className="brand">
             <img src={Logo} alt="logo" />
             <h3>snappy</h3>
           </div>
           <div className="contacts">
-            {contacts.map((contact, index) => {
+            <h3>Users</h3>
+            {contacts
+              .filter((contact) => contact.username !== currentUserName) // Loại bỏ người dùng hiện tại
+              .map((contact, index) => {
+                return (
+                  <div
+                    key={contact._id}
+                    className={`contact ${
+                      index === currentSelected ? "selected" : ""
+                    }`}
+                    onClick={() => changeCurrentChat(index, contact)}
+                  >
+                    <div className="avatar">
+                      <img
+                        src={`data:image/svg+xml;base64,${contact.avatarImage}`}
+                        alt=""
+                      />
+                    </div>
+                    <div className="username">
+                      <h3>{contact.name || contact.username}</h3>
+                    </div>
+                  </div>
+                );
+              })}
+
+            <h3>Groups</h3>
+            {groupcontacts.map((group, index) => {
               return (
                 <div
-                  key={contact._id}
+                  key={group._id}
                   className={`contact ${
-                    index === currentSelected ? "selected" : ""
+                    index + contacts.length === currentSelected ? "selected" : ""
                   }`}
-                  onClick={() => changeCurrentChat(index, contact)}
+                  onClick={() =>
+                    changeCurrentChat(index + contacts.length, group)
+                  }
                 >
                   <div className="avatar">
                     <img
-                      src={`data:image/svg+xml;base64,${contact.avatarImage}`}
+                      src={
+                        group.avatarImage
+                          ? `data:image/svg+xml;base64,${group.avatarImage}`
+                          : "/path/to/default/image.png"
+                      }
                       alt=""
                     />
                   </div>
                   <div className="username">
-                    <h3>{contact.username}</h3>
+                    <h3>{group.name || group.username}</h3>
                   </div>
                 </div>
               );
@@ -64,6 +131,7 @@ export default function Contacts({ contacts, changeChat }) {
     </>
   );
 }
+
 const Container = styled.div`
   display: grid;
   grid-template-rows: 10% 75% 15%;
@@ -95,6 +163,11 @@ const Container = styled.div`
         width: 0.1rem;
         border-radius: 1rem;
       }
+    }
+    h3 {
+      color: #ffffff;
+      align-self: flex-start;
+      margin-left: 10%;
     }
     .contact {
       background-color: #ffffff34;

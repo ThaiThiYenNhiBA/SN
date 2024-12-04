@@ -1,15 +1,22 @@
 import React, { useState, useEffect, useRef } from "react";
 import styled from "styled-components";
+import { useNavigate } from "react-router-dom";
 import ChatInput from "./ChatInput";
 import Logout from "./Logout";
 import { v4 as uuidv4 } from "uuid";
+import { FaUsers, FaInfoCircle } from "react-icons/fa";
 import axios from "axios";
-import { sendMessageRoute, recieveMessageRoute } from "../utils/APIRoutes";
+import { sendMessageRoute, recieveMessageRoute, deleteMessageRoute } from "../utils/APIRoutes"; // Thêm route xóa tin nhắn
+
 
 export default function ChatContainer({ currentChat, socket }) {
+  let flag = false;
+  const [isOnline, setIsOnline] = useState(false);
+  const [isSecretChat, setIsSecretChat] = useState(false); // Biến lưu trạng thái chat bí mật
   const [messages, setMessages] = useState([]);
   const scrollRef = useRef();
   const [arrivalMessage, setArrivalMessage] = useState(null);
+  const navigate = useNavigate(); // Khởi tạo hook useNavigate
 
   useEffect(async () => {
     const data = await JSON.parse(
@@ -18,19 +25,9 @@ export default function ChatContainer({ currentChat, socket }) {
     const response = await axios.post(recieveMessageRoute, {
       from: data._id,
       to: currentChat._id,
+      secretChat: isSecretChat, // Gửi thông tin secretChat
     });
     setMessages(response.data);
-  }, [currentChat]);
-
-  useEffect(() => {
-    const getCurrentChat = async () => {
-      if (currentChat) {
-        await JSON.parse(
-          localStorage.getItem(process.env.REACT_APP_LOCALHOST_KEY)
-        )._id;
-      }
-    };
-    getCurrentChat();
   }, [currentChat]);
 
   const handleSendMsg = async (msg) => {
@@ -41,16 +38,26 @@ export default function ChatContainer({ currentChat, socket }) {
       to: currentChat._id,
       from: data._id,
       msg,
+      secretChat: isSecretChat, // Gửi thông tin secretChat
     });
     await axios.post(sendMessageRoute, {
       from: data._id,
       to: currentChat._id,
       message: msg,
+      secretChat: isSecretChat, // Gửi thông tin secretChat
     });
 
     const msgs = [...messages];
     msgs.push({ fromSelf: true, message: msg });
     setMessages(msgs);
+  };
+
+  // Hàm để thu hồi tin nhắn
+  const handleDeleteMsg = async (messageId) => {
+    const response = await axios.post(deleteMessageRoute, { messageId });
+    if (response.data.msg === "Message deleted successfully") {
+      setMessages(messages.filter((msg) => msg._id !== messageId)); // Cập nhật lại danh sách tin nhắn
+    }
   };
 
   useEffect(() => {
@@ -69,6 +76,58 @@ export default function ChatContainer({ currentChat, socket }) {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  useEffect(() => {
+    const fetchUserStatus = async () => {
+      try {
+        const response = await axios.get(`http://localhost:5000/api/auth/allusers/${currentChat._id}`);
+        console.log(currentChat._id);
+        const user = response.data.find(user => user._id === currentChat._id);
+        console.log("Người dùng " + currentChat._id);
+        setIsOnline(currentChat._id ? true : false); // Cập nhật trạng thái online
+      } catch (error) {
+        console.error("Error fetching user status:", error);
+        setIsOnline(false);
+      }
+    };
+    // console.log("ra khỏi: "+flag);
+    fetchUserStatus();
+  }, [currentChat]);
+  const handleCreateGroup = () => {
+    navigate("/CreateGroup"); // Chuyển hướng đến trang CreateGroup
+  };
+
+  const Navigation = async () => {
+    try {
+      const response = await axios.get(`http://localhost:5000/api/group/getUsersById/${currentChat._id}`);
+      console.log(response.data); // Xử lý dữ liệu trả về từ API
+
+      // Điều hướng với currentChat._id là tham số truy vấn
+      navigate(`/GroupInfo?groupId=${currentChat._id}`);
+    } catch (error) {
+      console.error("Error fetching group info:", error);
+    }
+  };
+
+  // promise.all 
+  const Navigation_user = async () => {
+    try {
+      const data = await axios.get(`http://localhost:5000/api/auth/allusers/${currentChat._id}`);
+      console.log("dữ liệu người dùng: "+ data.data);
+      navigate(`/InvidualInfo?id=${currentChat._id}`);
+    } catch (error) {
+      console.error("Lỗi: ", error);
+    }
+  };
+
+  const handleReplyMsg = (message) => {
+    const reply = `Phản hồi: "${message.message}"`;
+    setMessages((prevMessages) => [
+      ...prevMessages,
+      { fromSelf: true, message: reply },
+    ]);
+  };
+
+
   return (
     <Container>
       <div className="chat-header">
@@ -81,21 +140,62 @@ export default function ChatContainer({ currentChat, socket }) {
           </div>
           <div className="username">
             <h3>{currentChat.username}</h3>
+            <h3>{currentChat.name}</h3>
+            <span style={{ color: isOnline ? "green" : "gray" }}>
+              {isOnline ? "Online" : "Offline"}
+            </span>
+          </div>
+          <div className="secret-chat-toggle">
+            <label>
+              <input
+                type="checkbox"
+                checked={isSecretChat}
+                onChange={() => setIsSecretChat(!isSecretChat)}
+              />
+              Chat bí mật
+            </label>
           </div>
         </div>
-        <Logout />
+        <div className="actions">
+          <div className="create-group">
+            <button onClick={handleCreateGroup}>
+              <FaUsers size={20} color="white" />
+            </button>
+          </div>
+          {/* Thêm nút Info */}
+          <div className="group-info">
+            <button onClick={Navigation}>
+              <FaInfoCircle size={20} color="white" />
+            </button>
+          </div>
+          <Logout />
+        </div>
       </div>
+
       <div className="chat-messages">
         {messages.map((message) => {
           return (
             <div ref={scrollRef} key={uuidv4()}>
               <div
-                className={`message ${
-                  message.fromSelf ? "sended" : "recieved"
-                }`}
+                className={`message ${message.fromSelf ? "sended" : "recieved"
+                  }`}
               >
                 <div className="content ">
                   <p>{message.message}</p>
+                  {message.fromSelf && ( // Chỉ hiển thị nút thu hồi tin nhắn cho người gửi
+                    <button
+                      onClick={() => handleDeleteMsg(message._id)}
+                      style={{ background: "red", color: "white" }}
+                    >
+                      Thu hồi
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleReplyMsg(message)} // Thêm chức năng phản hồi
+                    style={{ background: "blue", color: "white", marginLeft: "5px" }}
+                  >
+                    Phản hồi
+                  </button>
                 </div>
               </div>
             </div>
@@ -112,9 +212,6 @@ const Container = styled.div`
   grid-template-rows: 10% 80% 10%;
   gap: 0.1rem;
   overflow: hidden;
-  @media screen and (min-width: 720px) and (max-width: 1080px) {
-    grid-template-rows: 15% 70% 15%;
-  }
   .chat-header {
     display: flex;
     justify-content: space-between;
@@ -159,10 +256,7 @@ const Container = styled.div`
         padding: 1rem;
         font-size: 1.1rem;
         border-radius: 1rem;
-        color: #d1d1d1;
-        @media screen and (min-width: 720px) and (max-width: 1080px) {
-          max-width: 70%;
-        }
+      color: #d1d1d1;
       }
     }
     .sended {
@@ -178,4 +272,49 @@ const Container = styled.div`
       }
     }
   }
+  button {
+  background-color: red;
+  color: white;
+  padding: 5px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  }
+  button:hover {
+    background-color: darkred;
+  }
+
+  .secret-chat-toggle {
+  display: flex;
+  align-items: center;
+}
+
+.secret-chat-toggle label {
+  font-size: 14px;
+  margin-left: 10px;
+}
+
+.secret-chat-toggle input {
+  margin-right: 5px;
+}
+
+.actions {
+  display: flex;
+  align-items: center; /* Căn giữa theo chiều dọc */
+  gap: 1rem; /* Khoảng cách giữa các nút */
+}
+
+.create-group button {
+  background-color: #4f04ff21;
+  border: none;
+  padding: 10px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.create-group button:hover {
+  background-color: #4f04ff80;
+}
+
+
 `;
